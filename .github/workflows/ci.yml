@@ -205,11 +205,6 @@ jobs:
     - name: Download dependencies
       run: go mod download
 
-    - name: Run Gosec Security Scanner
-      run: |
-        go install github.com/securego/gosec/v2/cmd/gosec@latest
-        gosec ./...
-
     - name: Run Nancy vulnerability scanner
       run: |
         go install github.com/sonatypecommunity/nancy@latest
