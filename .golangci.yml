@@ -147,6 +147,24 @@ issues:
         - gocritic
       text: "unnecessaryDefer:"
 
+    # Allow file operations in history export functionality
+    - path: internal/history/history\.go
+      linters:
+        - gosec
+      text: "G304:"
+
+    # Allow subprocess execution in parser (shell functionality)
+    - path: internal/parser/parser\.go
+      linters:
+        - gosec
+      text: "G204:"
+
+    # Allow readline import in shell package (required for shell functionality)
+    - path: internal/shell/shell\.go
+      linters:
+        - depguard
+      text: "github.com/chzyer/readline"
+
   exclude-dirs:
     - build
     - vendor
