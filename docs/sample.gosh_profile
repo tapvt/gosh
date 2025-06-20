@@ -1,0 +1,219 @@
+# Sample .gosh_profile configuration file for gosh
+# This file is sourced for login shells
+
+# ============================================================================
+# SYSTEM ENVIRONMENT
+# ============================================================================
+
+# Set default umask
+umask 022
+
+# Set locale
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+
+# System paths
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# Add user bin directories
+if [ -d "$HOME/bin" ]; then
+    export PATH="$HOME/bin:$PATH"
+fi
+
+if [ -d "$HOME/.local/bin" ]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Programming language paths
+if [ -d "/usr/local/go/bin" ]; then
+    export PATH="/usr/local/go/bin:$PATH"
+fi
+
+if [ -d "$HOME/go/bin" ]; then
+    export PATH="$HOME/go/bin:$PATH"
+fi
+
+# Node.js paths
+if [ -d "$HOME/.npm-global/bin" ]; then
+    export PATH="$HOME/.npm-global/bin:$PATH"
+fi
+
+# Python paths
+if [ -d "$HOME/.local/bin" ]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Rust paths
+if [ -d "$HOME/.cargo/bin" ]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
+# ============================================================================
+# DEVELOPMENT ENVIRONMENT
+# ============================================================================
+
+# Go environment
+export GOPATH="$HOME/go"
+export GO111MODULE=on
+
+# Node.js environment
+export NPM_CONFIG_PREFIX="$HOME/.npm-global"
+
+# Python environment
+export PYTHONPATH="$HOME/.local/lib/python3.9/site-packages:$PYTHONPATH"
+
+# Rust environment
+export RUST_SRC_PATH="$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/src"
+
+# ============================================================================
+# EDITOR AND PAGER CONFIGURATION
+# ============================================================================
+
+# Set default editor (in order of preference)
+if command -v code >/dev/null 2>&1; then
+    export EDITOR="code --wait"
+    export VISUAL="code --wait"
+elif command -v vim >/dev/null 2>&1; then
+    export EDITOR=vim
+    export VISUAL=vim
+elif command -v nano >/dev/null 2>&1; then
+    export EDITOR=nano
+    export VISUAL=nano
+else
+    export EDITOR=vi
+    export VISUAL=vi
+fi
+
+# Set default pager
+if command -v less >/dev/null 2>&1; then
+    export PAGER=less
+    export LESS="-R -M -i -j4"
+else
+    export PAGER=more
+fi
+
+# ============================================================================
+# BROWSER CONFIGURATION
+# ============================================================================
+
+# Set default browser
+if command -v google-chrome >/dev/null 2>&1; then
+    export BROWSER=google-chrome
+elif command -v firefox >/dev/null 2>&1; then
+    export BROWSER=firefox
+elif command -v safari >/dev/null 2>&1; then
+    export BROWSER=safari
+fi
+
+# ============================================================================
+# TERMINAL CONFIGURATION
+# ============================================================================
+
+# Terminal colors
+export TERM=xterm-256color
+export CLICOLOR=1
+
+# Less colors
+export LESS_TERMCAP_mb=$'\e[1;32m'     # begin blinking
+export LESS_TERMCAP_md=$'\e[1;32m'     # begin bold
+export LESS_TERMCAP_me=$'\e[0m'        # end mode
+export LESS_TERMCAP_se=$'\e[0m'        # end standout-mode
+export LESS_TERMCAP_so=$'\e[01;33m'    # begin standout-mode - info box
+export LESS_TERMCAP_ue=$'\e[0m'        # end underline
+export LESS_TERMCAP_us=$'\e[1;4;31m'   # begin underline
+
+# ============================================================================
+# HISTORY CONFIGURATION
+# ============================================================================
+
+# History settings for login shells
+export HISTSIZE=10000
+export HISTFILESIZE=20000
+export HISTCONTROL=ignoredups:ignorespace
+
+# ============================================================================
+# SECURITY AND PRIVACY
+# ============================================================================
+
+# Don't save sensitive commands to history
+export HISTIGNORE="ls:cd:cd -:pwd:exit:date:* --help:history:clear"
+
+# Set secure permissions for new files
+umask 077
+
+# ============================================================================
+# NETWORK CONFIGURATION
+# ============================================================================
+
+# Proxy settings (uncomment and modify as needed)
+# export HTTP_PROXY=http://proxy.company.com:8080
+# export HTTPS_PROXY=http://proxy.company.com:8080
+# export NO_PROXY=localhost,127.0.0.1,.company.com
+
+# ============================================================================
+# APPLICATION-SPECIFIC SETTINGS
+# ============================================================================
+
+# Docker settings
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
+# AWS CLI settings
+export AWS_PAGER=""
+
+# Homebrew settings (macOS)
+if [ -d "/opt/homebrew" ]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+    export HOMEBREW_NO_ANALYTICS=1
+fi
+
+# ============================================================================
+# GOSH-SPECIFIC LOGIN SETTINGS
+# ============================================================================
+
+# Set gosh as the default shell for subshells
+export SHELL=$(which gosh 2>/dev/null || echo $SHELL)
+
+# Gosh configuration directory
+export GOSH_CONFIG_DIR="$HOME/.config/gosh"
+
+# Create gosh config directory if it doesn't exist
+if [ ! -d "$GOSH_CONFIG_DIR" ]; then
+    mkdir -p "$GOSH_CONFIG_DIR"
+fi
+
+# ============================================================================
+# CONDITIONAL LOADING
+# ============================================================================
+
+# Load .goshrc for interactive shells
+if [ -n "$PS1" ] && [ -f "$HOME/.goshrc" ]; then
+    source "$HOME/.goshrc"
+fi
+
+# Load local profile customizations
+if [ -f "$HOME/.gosh_profile.local" ]; then
+    source "$HOME/.gosh_profile.local"
+fi
+
+# Load work-specific profile
+if [ -f "$HOME/.gosh_profile.work" ]; then
+    source "$HOME/.gosh_profile.work"
+fi
+
+# ============================================================================
+# STARTUP MESSAGE
+# ============================================================================
+
+# Display system information on login (optional)
+if [ "$GOSH_SHOW_SYSTEM_INFO" = "true" ]; then
+    echo "Welcome to $(hostname)"
+    echo "System: $(uname -s) $(uname -r)"
+    echo "User: $(whoami)"
+    echo "Date: $(date)"
+    echo ""
+fi
