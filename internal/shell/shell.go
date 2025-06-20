@@ -108,6 +108,7 @@ func New(cfg *config.Config) (*Shell, error) {
 
 	// Initialize parser
 	parserInst := parser.New(cfg)
+	parserInst.SetHistoryManager(historyMgr)
 
 	// Create readline instance with completion
 	rl, err := readline.NewEx(&readline.Config{

@@ -29,6 +29,16 @@ type Entry struct {
 	Directory string
 }
 
+// GetCommand returns the command string (implements parser.HistoryEntry)
+func (e Entry) GetCommand() string {
+	return e.Command
+}
+
+// GetTimestamp returns the timestamp as a string (implements parser.HistoryEntry)
+func (e Entry) GetTimestamp() string {
+	return e.Timestamp.Format(time.RFC3339)
+}
+
 // Manager handles command history operations
 type Manager struct {
 	config  *config.Config

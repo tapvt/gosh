@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"gosh/internal/config"
+	"gosh/internal/history"
 )
 
 const (
@@ -27,7 +28,8 @@ type Command interface {
 
 // Parser handles parsing of command lines
 type Parser struct {
-	config *config.Config
+	config         *config.Config
+	historyManager *history.Manager
 }
 
 // New creates a new parser instance
@@ -35,6 +37,11 @@ func New(cfg *config.Config) *Parser {
 	return &Parser{
 		config: cfg,
 	}
+}
+
+// SetHistoryManager sets the history manager for the parser
+func (p *Parser) SetHistoryManager(hm *history.Manager) {
+	p.historyManager = hm
 }
 
 // Parse parses a command line and returns a Command
@@ -151,7 +158,7 @@ func (p *Parser) parseBuiltin(tokens []string) Command {
 	case "help":
 		return &HelpCommand{Args: args}
 	case "history":
-		return &HistoryCommand{Args: args}
+		return &HistoryCommand{Args: args, Manager: p.historyManager}
 	case "alias":
 		return &AliasCommand{Args: args, Config: p.config}
 	case "export":
@@ -324,21 +331,7 @@ func (c *HelpCommand) Execute(_ context.Context, _ *config.Config) error {
 // HistoryCommand implements the history built-in command
 type HistoryCommand struct {
 	Args    []string
-	Manager HistoryManager // Interface to history manager
-}
-
-// HistoryManager interface for accessing history
-type HistoryManager interface {
-	GetAll() []HistoryEntry
-	GetRecent(n int) []HistoryEntry
-	Search(term string) []HistoryEntry
-	Clear() error
-}
-
-// HistoryEntry represents a history entry
-type HistoryEntry interface {
-	GetCommand() string
-	GetTimestamp() string
+	Manager *history.Manager // Concrete history manager
 }
 
 // Execute implements the Command interface for HistoryCommand
