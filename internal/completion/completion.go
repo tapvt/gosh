@@ -14,6 +14,11 @@ import (
 	"gosh/internal/config"
 )
 
+const (
+	// MinTokensForCompletion is the minimum number of tokens required for certain completions
+	MinTokensForCompletion = 2
+)
+
 // Manager handles tab completion functionality
 type Manager struct {
 	config *config.Config
@@ -80,10 +85,8 @@ func (m *Manager) completeCommand(prefix string) ([]string, error) {
 	}
 
 	// Add commands from PATH
-	pathCompletions, err := m.completeFromPath(prefix)
-	if err == nil {
-		completions = append(completions, pathCompletions...)
-	}
+	pathCompletions := m.completeFromPath(prefix)
+	completions = append(completions, pathCompletions...)
 
 	// Remove duplicates and sort
 	completions = m.removeDuplicates(completions)
@@ -93,7 +96,7 @@ func (m *Manager) completeCommand(prefix string) ([]string, error) {
 }
 
 // completeFromPath finds executable commands in PATH
-func (m *Manager) completeFromPath(prefix string) ([]string, error) {
+func (m *Manager) completeFromPath(prefix string) []string {
 	var completions []string
 	seen := make(map[string]bool)
 
@@ -128,7 +131,7 @@ func (m *Manager) completeFromPath(prefix string) ([]string, error) {
 		}
 	}
 
-	return completions, nil
+	return completions
 }
 
 // isExecutable checks if a file is executable
@@ -148,78 +151,114 @@ func (m *Manager) isExecutable(_ string, entry fs.DirEntry) bool {
 
 // completeFile provides file and directory completions
 func (m *Manager) completeFile(prefix string) ([]string, error) {
-	var completions []string
+	dir, filePrefix := m.parseFilePrefix(prefix)
 
-	// Determine the directory and filename prefix
-	dir := "."
-	filePrefix := prefix
+	expandedDir, err := m.expandHomeDirectory(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(expandedDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var completions []string
+	for _, entry := range entries {
+		if completion := m.processFileEntry(entry, filePrefix, expandedDir, prefix); completion != "" {
+			completions = append(completions, completion)
+		}
+	}
+
+	sort.Strings(completions)
+	return completions, nil
+}
+
+// parseFilePrefix separates the directory and filename parts of a prefix
+func (m *Manager) parseFilePrefix(prefix string) (dir, filePrefix string) {
+	dir = "."
+	filePrefix = prefix
 
 	if strings.Contains(prefix, "/") {
 		dir = filepath.Dir(prefix)
 		filePrefix = filepath.Base(prefix)
 	}
 
-	// Expand ~ to home directory
+	return dir, filePrefix
+}
+
+// expandHomeDirectory expands ~ to the user's home directory
+func (m *Manager) expandHomeDirectory(dir string) (string, error) {
 	if strings.HasPrefix(dir, "~/") {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		dir = filepath.Join(homeDir, dir[2:])
+		return filepath.Join(homeDir, dir[2:]), nil
 	} else if dir == "~" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		dir = homeDir
+		return os.UserHomeDir()
+	}
+	return dir, nil
+}
+
+// processFileEntry processes a single file entry and returns the completion string
+func (m *Manager) processFileEntry(entry fs.DirEntry, filePrefix, dir, originalPrefix string) string {
+	name := entry.Name()
+
+	// Skip hidden files unless configured to show them
+	if !m.config.CompletionShowHidden && strings.HasPrefix(name, ".") {
+		return ""
 	}
 
-	// Read directory entries
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
+	// Check if name matches prefix
+	if !m.matchesPrefix(name, filePrefix) {
+		return ""
 	}
 
-	for _, entry := range entries {
-		name := entry.Name()
+	// Build the full completion
+	completion := m.buildCompletion(name, dir, originalPrefix)
 
-		// Skip hidden files unless configured to show them
-		if !m.config.CompletionShowHidden && strings.HasPrefix(name, ".") {
-			continue
-		}
-
-		// Check if name matches prefix
-		matches := false
-		if m.config.CompletionCaseInsensitive {
-			matches = strings.HasPrefix(strings.ToLower(name), strings.ToLower(filePrefix))
-		} else {
-			matches = strings.HasPrefix(name, filePrefix)
-		}
-
-		if !matches {
-			continue
-		}
-
-		// Build the full completion
-		var completion string
-		if dir == "." {
-			completion = name
-		} else if strings.HasPrefix(prefix, "/") || strings.HasPrefix(prefix, "~/") {
-			completion = filepath.Join(dir, name)
-		} else {
-			completion = filepath.Join(dir, name)
-		}
-
-		// Add trailing slash for directories
-		if entry.IsDir() {
-			completion += "/"
-		}
-
-		completions = append(completions, completion)
+	// Add trailing slash for directories
+	if entry.IsDir() {
+		completion += "/"
 	}
 
-	sort.Strings(completions)
-	return completions, nil
+	return completion
+}
+
+// matchesPrefix checks if a name matches the given prefix
+func (m *Manager) matchesPrefix(name, filePrefix string) bool {
+	if m.config.CompletionCaseInsensitive {
+		return strings.HasPrefix(strings.ToLower(name), strings.ToLower(filePrefix))
+	}
+	return strings.HasPrefix(name, filePrefix)
+}
+
+// buildCompletion builds the full completion path
+func (m *Manager) buildCompletion(name, dir, _ string) string {
+	if dir == "." {
+		return name
+	}
+	return filepath.Join(dir, name)
+}
+
+// getLastTokenPrefix gets the prefix from the last token in a slice
+func (m *Manager) getLastTokenPrefix(tokens []string) string {
+	if len(tokens) > MinTokensForCompletion {
+		return tokens[len(tokens)-1]
+	}
+	return ""
+}
+
+// filterCompletionsByPrefix filters a list of options by prefix match
+func (m *Manager) filterCompletionsByPrefix(options []string, prefix string) []string {
+	var completions []string
+	for _, option := range options {
+		if strings.HasPrefix(option, prefix) {
+			completions = append(completions, option)
+		}
+	}
+	return completions
 }
 
 // removeDuplicates removes duplicate strings from a slice
@@ -325,7 +364,7 @@ func (m *Manager) FormatCompletions(completions []string, maxWidth int) []string
 
 // completeGit provides git-specific completions
 func (m *Manager) completeGit(tokens []string, cursorPos int, input string) ([]string, error) {
-	if len(tokens) < 2 {
+	if len(tokens) < MinTokensForCompletion {
 		// Complete git subcommands
 		return m.completeGitSubcommands("")
 	}
@@ -392,7 +431,7 @@ func (m *Manager) completeGitBranches(tokens []string) ([]string, error) {
 		branches := []string{"main", "master", "develop", "feature/", "bugfix/", "hotfix/"}
 
 		var prefix string
-		if len(tokens) > 2 {
+		if len(tokens) > MinTokensForCompletion {
 			prefix = tokens[len(tokens)-1]
 		}
 
@@ -412,7 +451,7 @@ func (m *Manager) completeGitModifiedFiles(tokens []string) ([]string, error) {
 	// For now, fall back to regular file completion
 	// This could be enhanced to only show modified files
 	var prefix string
-	if len(tokens) > 2 {
+	if len(tokens) > MinTokensForCompletion {
 		prefix = tokens[len(tokens)-1]
 	}
 	return m.completeFile(prefix)
@@ -422,54 +461,24 @@ func (m *Manager) completeGitModifiedFiles(tokens []string) ([]string, error) {
 func (m *Manager) completeGitCommitOptions(tokens []string) ([]string, error) {
 	options := []string{"-m", "--message", "-a", "--all", "--amend", "-v", "--verbose"}
 
-	var prefix string
-	if len(tokens) > 2 {
-		prefix = tokens[len(tokens)-1]
-	}
-
-	var completions []string
-	for _, option := range options {
-		if strings.HasPrefix(option, prefix) {
-			completions = append(completions, option)
-		}
-	}
-	return completions, nil
+	prefix := m.getLastTokenPrefix(tokens)
+	return m.filterCompletionsByPrefix(options, prefix), nil
 }
 
 // completeGitRemotes completes git remote names
 func (m *Manager) completeGitRemotes(tokens []string) ([]string, error) {
 	remotes := []string{"origin", "upstream"}
 
-	var prefix string
-	if len(tokens) > 2 {
-		prefix = tokens[len(tokens)-1]
-	}
-
-	var completions []string
-	for _, remote := range remotes {
-		if strings.HasPrefix(remote, prefix) {
-			completions = append(completions, remote)
-		}
-	}
-	return completions, nil
+	prefix := m.getLastTokenPrefix(tokens)
+	return m.filterCompletionsByPrefix(remotes, prefix), nil
 }
 
 // completeGitRemoteSubcommands completes git remote subcommands
 func (m *Manager) completeGitRemoteSubcommands(tokens []string) ([]string, error) {
 	subcommands := []string{"add", "remove", "rename", "show", "prune", "update"}
 
-	var prefix string
-	if len(tokens) > 2 {
-		prefix = tokens[len(tokens)-1]
-	}
-
-	var completions []string
-	for _, cmd := range subcommands {
-		if strings.HasPrefix(cmd, prefix) {
-			completions = append(completions, cmd)
-		}
-	}
-	return completions, nil
+	prefix := m.getLastTokenPrefix(tokens)
+	return m.filterCompletionsByPrefix(subcommands, prefix), nil
 }
 
 // completeGitRefs completes git references (branches, tags, commits)
@@ -477,16 +486,6 @@ func (m *Manager) completeGitRefs(tokens []string) ([]string, error) {
 	// Combine branches and common refs
 	refs := []string{"HEAD", "main", "master", "develop", "origin/main", "origin/master"}
 
-	var prefix string
-	if len(tokens) > 2 {
-		prefix = tokens[len(tokens)-1]
-	}
-
-	var completions []string
-	for _, ref := range refs {
-		if strings.HasPrefix(ref, prefix) {
-			completions = append(completions, ref)
-		}
-	}
-	return completions, nil
+	prefix := m.getLastTokenPrefix(tokens)
+	return m.filterCompletionsByPrefix(refs, prefix), nil
 }

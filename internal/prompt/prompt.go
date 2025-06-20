@@ -14,6 +14,13 @@ import (
 	"gosh/internal/git"
 )
 
+const (
+	// PromptColorNone represents no color formatting
+	PromptColorNone = "none"
+	// UnknownValue represents unknown values in prompts
+	UnknownValue = "unknown"
+)
+
 // Manager handles prompt generation and customization
 type Manager struct {
 	config     *config.Config
@@ -35,59 +42,86 @@ func New(cfg *config.Config) (*Manager, error) {
 
 // Generate generates the current prompt string
 func (m *Manager) Generate() (string, error) {
+	format := m.getPromptFormat()
+	prompt := m.processPromptFormat(format)
+
+	// Apply colors if enabled
+	if m.config.PromptColor != PromptColorNone {
+		prompt = m.applyColors(prompt)
+	}
+
+	return prompt, nil
+}
+
+// getPromptFormat returns the prompt format, using default if empty
+func (m *Manager) getPromptFormat() string {
 	format := m.config.PromptFormat
 	if format == "" {
 		format = "%u@%h:%w%g$ "
 	}
+	return format
+}
 
+// processPromptFormat processes the prompt format string and expands escape sequences
+func (m *Manager) processPromptFormat(format string) string {
 	var result strings.Builder
 	i := 0
 	for i < len(format) {
 		if format[i] == '%' && i+1 < len(format) {
-			// Handle escape sequences
-			switch format[i+1] {
-			case 'u':
-				result.WriteString(m.getUsername())
-			case 'h':
-				result.WriteString(m.getHostname())
-			case 'w':
-				result.WriteString(m.getWorkingDir())
-			case 'W':
-				result.WriteString(m.getWorkingDirBasename())
-			case 'g':
-				if m.config.ShowGitInfo {
-					gitInfo, err := m.getGitInfo()
-					if err == nil && gitInfo != "" {
-						result.WriteString(gitInfo)
-					}
-				}
-			case 't':
-				if m.config.ShowTimestamp {
-					result.WriteString(m.getTimestamp())
-				}
-			case '$':
-				result.WriteString(m.getPromptChar())
-			case '%':
-				result.WriteString("%")
-			default:
-				// Unknown escape, just write it as-is
-				result.WriteString(format[i : i+2])
-			}
+			expansion := m.expandEscapeSequence(format[i+1])
+			result.WriteString(expansion)
 			i += 2
 		} else {
 			result.WriteByte(format[i])
 			i++
 		}
 	}
+	return result.String()
+}
 
-	prompt := result.String()
-
-	// Apply colors if enabled
-	if m.config.PromptColor != "none" {
-		prompt = m.applyColors(prompt)
+// expandEscapeSequence expands a single escape sequence character
+func (m *Manager) expandEscapeSequence(char byte) string {
+	switch char {
+	case 'u':
+		return m.getUsername()
+	case 'h':
+		return m.getHostname()
+	case 'w':
+		return m.getWorkingDir()
+	case 'W':
+		return m.getWorkingDirBasename()
+	case 'g':
+		return m.getGitInfoSafe()
+	case 't':
+		return m.getTimestampSafe()
+	case '$':
+		return m.getPromptChar()
+	case '%':
+		return "%"
+	default:
+		// Unknown escape, just write it as-is
+		return "%" + string(char)
 	}
+}
 
-	return prompt, nil
+// getGitInfoSafe returns git info if enabled, empty string otherwise
+func (m *Manager) getGitInfoSafe() string {
+	if !m.config.ShowGitInfo {
+		return ""
+	}
+	gitInfo, err := m.getGitInfo()
+	if err != nil || gitInfo == "" {
+		return ""
+	}
+	return gitInfo
+}
+
+// getTimestampSafe returns timestamp if enabled, empty string otherwise
+func (m *Manager) getTimestampSafe() string {
+	if !m.config.ShowTimestamp {
+		return ""
+	}
+	return m.getTimestamp()
 }
 
 // getUsername returns the current username
@@ -95,7 +129,7 @@ func (m *Manager) getUsername() string {
 	if currentUser, err := user.Current(); err == nil {
 		return currentUser.Username
 	}
-	return "unknown"
+	return UnknownValue
 }
 
 // getHostname returns the hostname
@@ -110,7 +144,7 @@ func (m *Manager) getHostname() string {
 func (m *Manager) getWorkingDir() string {
 	wd, err := os.Getwd()
 	if err != nil {
-		return "unknown"
+		return UnknownValue
 	}
 
 	// Replace home directory with ~
@@ -127,7 +161,7 @@ func (m *Manager) getWorkingDir() string {
 func (m *Manager) getWorkingDirBasename() string {
 	wd, err := os.Getwd()
 	if err != nil {
-		return "unknown"
+		return UnknownValue
 	}
 
 	// Special case for home directory
@@ -163,15 +197,15 @@ func (m *Manager) getGitInfo() (string, error) {
 	// Add status indicators
 	if m.config.GitShowStatus {
 		var indicators []string
-		
+
 		if info.HasUncommitted {
 			indicators = append(indicators, "*")
 		}
-		
+
 		if info.HasUntracked {
 			indicators = append(indicators, "?")
 		}
-		
+
 		if info.HasStaged {
 			indicators = append(indicators, "+")
 		}
@@ -214,7 +248,7 @@ func (m *Manager) getPromptChar() string {
 
 // applyColors applies color formatting to the prompt
 func (m *Manager) applyColors(prompt string) string {
-	if m.config.PromptColor == "none" || m.config.PromptColor == "off" {
+	if m.config.PromptColor == PromptColorNone || m.config.PromptColor == "off" {
 		return prompt
 	}
 
@@ -235,13 +269,13 @@ func (m *Manager) applyColors(prompt string) string {
 	switch m.config.PromptColor {
 	case "auto", "default":
 		// Color username@hostname in green
-		prompt = strings.Replace(prompt, m.getUsername()+"@"+m.getHostname(), 
+		prompt = strings.Replace(prompt, m.getUsername()+"@"+m.getHostname(),
 			colors["green"]+m.getUsername()+"@"+m.getHostname()+colors["reset"], 1)
-		
+
 		// Color working directory in blue
 		wd := m.getWorkingDir()
 		prompt = strings.Replace(prompt, wd, colors["blue"]+wd+colors["reset"], 1)
-		
+
 		// Color git info in yellow
 		if strings.Contains(prompt, "(") && strings.Contains(prompt, ")") {
 			start := strings.Index(prompt, "(")
@@ -275,7 +309,7 @@ func (m *Manager) SetFormat(format string) {
 func (m *Manager) GetAvailableFormats() map[string]string {
 	return map[string]string{
 		"%u": "Username",
-		"%h": "Hostname", 
+		"%h": "Hostname",
 		"%w": "Full working directory path",
 		"%W": "Working directory basename",
 		"%g": "Git information",

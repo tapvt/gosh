@@ -2,18 +2,10 @@ run:
   timeout: 5m
   issues-exit-code: 1
   tests: true
-  skip-dirs:
-    - build
-    - vendor
-  skip-files:
-    - ".*\\.pb\\.go$"
 
 output:
-  format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  uniq-by-line: true
-  sort-results: true
+  formats:
+    - format: colored-line-number
 
 linters-settings:
   dupl:
@@ -22,7 +14,10 @@ linters-settings:
     lines: 100
     statements: 50
   gci:
-    local-prefixes: gosh
+    sections:
+      - standard
+      - default
+      - prefix(gosh)
   goconst:
     min-len: 2
     min-occurrences: 2
@@ -43,15 +38,17 @@ linters-settings:
     min-complexity: 15
   goimports:
     local-prefixes: gosh
-  golint:
-    min-confidence: 0
-  gomnd:
-    settings:
-      mnd:
-        # don't include the "operation" and "assign"
-        checks: argument,case,condition,return
+
+  mnd:
+    # don't include the "operation" and "assign"
+    checks:
+      - argument
+      - case
+      - condition
+      - return
   govet:
-    check-shadowing: true
+    enable:
+      - shadow
     settings:
       printf:
         funcs:
@@ -61,12 +58,10 @@ linters-settings:
           - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
   lll:
     line-length: 140
-  maligned:
-    suggest-new: true
+
   misspell:
     locale: US
   nolintlint:
-    allow-leading-space: true # don't require machine-readable nolint directives (i.e. with no leading space)
     allow-unused: false # report any unused nolint directives
     require-explanation: false # don't require an explanation for nolint directives
     require-specific: false # don't require nolint directives to be specific about which linter is being skipped
@@ -77,12 +72,11 @@ linters:
   disable-all: true
   enable:
     - bodyclose
-    - deadcode
+    - copyloopvar
     - depguard
     - dogsled
     - dupl
     - errcheck
-    - exportloopref
     - exhaustive
     - funlen
     - gochecknoinits
@@ -91,8 +85,7 @@ linters:
     - gocyclo
     - gofmt
     - goimports
-    - golint
-    - gomnd
+    - mnd
     - goprintffuncname
     - gosec
     - gosimple
@@ -103,15 +96,14 @@ linters:
     - nakedret
     - noctx
     - nolintlint
+    - revive
     - rowserrcheck
     - staticcheck
-    - structcheck
     - stylecheck
     - typecheck
     - unconvert
     - unparam
     - unused
-    - varcheck
     - whitespace
 
   # don't enable:
@@ -135,7 +127,7 @@ issues:
   exclude-rules:
     - path: _test\.go
       linters:
-        - gomnd
+        - mnd
         - funlen
         - goconst
         - gocyclo
@@ -147,6 +139,30 @@ issues:
     - linters:
         - gocritic
       text: "unnecessaryDefer:"
+
+    # Allow file operations in history export functionality
+    - path: internal/history/history\.go
+      linters:
+        - gosec
+      text: "G304:"
+
+    # Allow subprocess execution in parser (shell functionality)
+    - path: internal/parser/parser\.go
+      linters:
+        - gosec
+      text: "G204:"
+
+    # Allow readline import in shell package (required for shell functionality)
+    - path: internal/shell/shell\.go
+      linters:
+        - depguard
+      text: "github.com/chzyer/readline"
+
+  exclude-dirs:
+    - build
+    - vendor
+  exclude-files:
+    - ".*\\.pb\\.go$"
 
   # Independently from option `exclude` we use default exclude patterns,
   # it can be disabled by this option. To list all

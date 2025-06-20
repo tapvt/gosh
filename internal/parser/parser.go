@@ -13,6 +13,12 @@ import (
 	"strings"
 
 	"gosh/internal/config"
+	"gosh/internal/history"
+)
+
+const (
+	// KeyValueParts is the expected number of parts when splitting key=value pairs
+	KeyValueParts = 2
 )
 
 // Command represents a parsed command
@@ -22,7 +28,8 @@ type Command interface {
 
 // Parser handles parsing of command lines
 type Parser struct {
-	config *config.Config
+	config         *config.Config
+	historyManager *history.Manager
 }
 
 // New creates a new parser instance
@@ -30,6 +37,11 @@ func New(cfg *config.Config) *Parser {
 	return &Parser{
 		config: cfg,
 	}
+}
+
+// SetHistoryManager sets the history manager for the parser
+func (p *Parser) SetHistoryManager(hm *history.Manager) {
+	p.historyManager = hm
 }
 
 // Parse parses a command line and returns a Command
@@ -146,7 +158,7 @@ func (p *Parser) parseBuiltin(tokens []string) Command {
 	case "help":
 		return &HelpCommand{Args: args}
 	case "history":
-		return &HistoryCommand{Args: args}
+		return &HistoryCommand{Args: args, Manager: p.historyManager}
 	case "alias":
 		return &AliasCommand{Args: args, Config: p.config}
 	case "export":
@@ -226,7 +238,8 @@ func isAlphaNumeric(c byte) bool {
 // NoOpCommand represents a no-operation command
 type NoOpCommand struct{}
 
-func (c *NoOpCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for NoOpCommand
+func (c *NoOpCommand) Execute(_ context.Context, _ *config.Config) error {
 	return nil
 }
 
@@ -235,7 +248,8 @@ type CdCommand struct {
 	Args []string
 }
 
-func (c *CdCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for CdCommand
+func (c *CdCommand) Execute(_ context.Context, _ *config.Config) error {
 	var dir string
 	if len(c.Args) == 0 {
 		// No arguments, go to home directory
@@ -267,7 +281,8 @@ func (c *CdCommand) Execute(ctx context.Context, cfg *config.Config) error {
 // PwdCommand implements the pwd built-in command
 type PwdCommand struct{}
 
-func (c *PwdCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for PwdCommand
+func (c *PwdCommand) Execute(_ context.Context, _ *config.Config) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("pwd: %w", err)
@@ -281,7 +296,8 @@ type ExitCommand struct {
 	Args []string
 }
 
-func (c *ExitCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for ExitCommand
+func (c *ExitCommand) Execute(_ context.Context, _ *config.Config) error {
 	os.Exit(0)
 	return nil
 }
@@ -291,7 +307,8 @@ type HelpCommand struct {
 	Args []string
 }
 
-func (c *HelpCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for HelpCommand
+func (c *HelpCommand) Execute(_ context.Context, _ *config.Config) error {
 	fmt.Println("Gosh - A modern shell written in Go")
 	fmt.Println()
 	fmt.Println("Built-in commands:")
@@ -314,24 +331,11 @@ func (c *HelpCommand) Execute(ctx context.Context, cfg *config.Config) error {
 // HistoryCommand implements the history built-in command
 type HistoryCommand struct {
 	Args    []string
-	Manager HistoryManager // Interface to history manager
+	Manager *history.Manager // Concrete history manager
 }
 
-// HistoryManager interface for accessing history
-type HistoryManager interface {
-	GetAll() []HistoryEntry
-	GetRecent(n int) []HistoryEntry
-	Search(term string) []HistoryEntry
-	Clear() error
-}
-
-// HistoryEntry represents a history entry
-type HistoryEntry interface {
-	GetCommand() string
-	GetTimestamp() string
-}
-
-func (c *HistoryCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for HistoryCommand
+func (c *HistoryCommand) Execute(_ context.Context, _ *config.Config) error {
 	if c.Manager == nil {
 		fmt.Println("History functionality not available")
 		return nil
@@ -376,7 +380,8 @@ type AliasCommand struct {
 	Config *config.Config
 }
 
-func (c *AliasCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for AliasCommand
+func (c *AliasCommand) Execute(_ context.Context, _ *config.Config) error {
 	if len(c.Args) == 0 {
 		// Show all aliases
 		for name, value := range c.Config.Aliases {
@@ -387,8 +392,8 @@ func (c *AliasCommand) Execute(ctx context.Context, cfg *config.Config) error {
 
 	// Parse alias definition
 	arg := strings.Join(c.Args, " ")
-	parts := strings.SplitN(arg, "=", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(arg, "=", KeyValueParts)
+	if len(parts) != KeyValueParts {
 		return fmt.Errorf("alias: invalid format, use: alias name=value")
 	}
 
@@ -405,7 +410,8 @@ type ExportCommand struct {
 	Config *config.Config
 }
 
-func (c *ExportCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for ExportCommand
+func (c *ExportCommand) Execute(_ context.Context, _ *config.Config) error {
 	if len(c.Args) == 0 {
 		// Show all environment variables
 		for key, value := range c.Config.Environment {
@@ -416,8 +422,8 @@ func (c *ExportCommand) Execute(ctx context.Context, cfg *config.Config) error {
 
 	// Parse export definition
 	arg := strings.Join(c.Args, " ")
-	parts := strings.SplitN(arg, "=", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(arg, "=", KeyValueParts)
+	if len(parts) != KeyValueParts {
 		return fmt.Errorf("export: invalid format, use: export NAME=value")
 	}
 
@@ -425,7 +431,9 @@ func (c *ExportCommand) Execute(ctx context.Context, cfg *config.Config) error {
 	value := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
 
 	c.Config.Environment[name] = value
-	os.Setenv(name, value)
+	if err := os.Setenv(name, value); err != nil {
+		return fmt.Errorf("failed to set environment variable %s: %w", name, err)
+	}
 	return nil
 }
 
@@ -435,7 +443,8 @@ type ExternalCommand struct {
 	Args []string
 }
 
-func (c *ExternalCommand) Execute(ctx context.Context, cfg *config.Config) error {
+// Execute implements the Command interface for ExternalCommand
+func (c *ExternalCommand) Execute(ctx context.Context, _ *config.Config) error {
 	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

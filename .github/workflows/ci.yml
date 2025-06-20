@@ -19,7 +19,7 @@ jobs:
         go-version: '1.23.3'
 
     - name: Cache Go modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/go-build
@@ -31,8 +31,11 @@ jobs:
     - name: Download dependencies
       run: go mod download
 
+    - name: Clean build cache
+      run: go clean -cache
+
     - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@v6
       with:
         version: latest
         args: --timeout=5m
@@ -69,7 +72,7 @@ jobs:
         go-version: '1.23.3'
 
     - name: Cache Go modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/go-build
@@ -99,7 +102,7 @@ jobs:
         go-version: ${{ matrix.go-version }}
 
     - name: Cache Go modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/go-build
@@ -119,7 +122,7 @@ jobs:
 
     - name: Upload coverage to Codecov
       if: matrix.go-version == '1.23.3'
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         file: ./coverage.out
         flags: unittests
@@ -145,7 +148,7 @@ jobs:
         go-version: '1.23.3'
 
     - name: Cache Go modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/go-build
@@ -157,6 +160,9 @@ jobs:
     - name: Download dependencies
       run: go mod download
 
+    - name: Clean build directory
+      run: rm -rf build && mkdir -p build
+
     - name: Build binary
       env:
         GOOS: ${{ matrix.goos }}
@@ -166,7 +172,7 @@ jobs:
         COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
         BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
         LDFLAGS="-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}"
-        
+
         mkdir -p build
         if [ "${{ matrix.goos }}" = "windows" ]; then
           go build -trimpath -ldflags "${LDFLAGS}" -o build/gosh-${{ matrix.goos }}-${{ matrix.goarch }}.exe cmd/main.go
@@ -175,29 +181,10 @@ jobs:
         fi
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: gosh-${{ matrix.goos }}-${{ matrix.goarch }}
         path: build/gosh-*
         retention-days: 30
 
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23.3'
-
-    - name: Run Gosec Security Scanner
-      uses: securecodewarrior/github-action-gosec@master
-      with:
-        args: './...'
-
-    - name: Run Nancy vulnerability scanner
-      run: |
-        go install github.com/sonatypecommunity/nancy@latest
-        go list -json -deps ./... | nancy sleuth

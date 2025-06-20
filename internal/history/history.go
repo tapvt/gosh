@@ -13,11 +13,30 @@ import (
 	"gosh/internal/config"
 )
 
+const (
+	// HistoryLineParts is the expected number of parts in a history line
+	HistoryLineParts = 3
+	// DefaultFilePermissions is the default permission for created files
+	DefaultFilePermissions = 0600
+	// DefaultDirPermissions is the default permission for created directories
+	DefaultDirPermissions = 0750
+)
+
 // Entry represents a single history entry
 type Entry struct {
 	Command   string
 	Timestamp time.Time
 	Directory string
+}
+
+// GetCommand returns the command string (implements parser.HistoryEntry)
+func (e Entry) GetCommand() string {
+	return e.Command
+}
+
+// GetTimestamp returns the timestamp as a string (implements parser.HistoryEntry)
+func (e Entry) GetTimestamp() string {
+	return e.Timestamp.Format(time.RFC3339)
 }
 
 // Manager handles command history operations
@@ -206,7 +225,11 @@ func (m *Manager) load() error {
 		}
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -216,8 +239,8 @@ func (m *Manager) load() error {
 		}
 
 		// Parse the line format: timestamp|directory|command
-		parts := strings.SplitN(line, "|", 3)
-		if len(parts) < 3 {
+		parts := strings.SplitN(line, "|", HistoryLineParts)
+		if len(parts) < HistoryLineParts {
 			// Old format, just the command
 			entry := Entry{
 				Command:   line,
@@ -260,7 +283,7 @@ func (m *Manager) save() error {
 
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(m.config.HistoryFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, DefaultDirPermissions); err != nil {
 		return err
 	}
 
@@ -268,7 +291,11 @@ func (m *Manager) save() error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	for _, entry := range m.entries {
 		line := fmt.Sprintf("%s|%s|%s\n",
@@ -295,12 +322,12 @@ func (m *Manager) clearFile() error {
 // GetStats returns history statistics
 func (m *Manager) GetStats() map[string]interface{} {
 	stats := make(map[string]interface{})
-	
+
 	stats["total_entries"] = len(m.entries)
 	stats["max_size"] = m.config.HistorySize
 	stats["save_enabled"] = m.config.SaveHistory
 	stats["duplicates_allowed"] = m.config.HistoryDuplicates
-	
+
 	if len(m.entries) > 0 {
 		stats["oldest_entry"] = m.entries[0].Timestamp
 		stats["newest_entry"] = m.entries[len(m.entries)-1].Timestamp
@@ -318,11 +345,15 @@ func (m *Manager) GetStats() map[string]interface{} {
 
 // Export exports history to a file in a specific format
 func (m *Manager) Export(filename, format string) error {
-	file, err := os.Create(filename)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, DefaultFilePermissions)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	switch format {
 	case "bash":
@@ -338,7 +369,7 @@ func (m *Manager) Export(filename, format string) error {
 			return err
 		}
 		for i, entry := range m.entries {
-			line := fmt.Sprintf(`  {"command": "%s", "timestamp": "%s", "directory": "%s"}`,
+			line := fmt.Sprintf(`  {"command": %q, "timestamp": %q, "directory": %q}`,
 				strings.ReplaceAll(entry.Command, `"`, `\"`),
 				entry.Timestamp.Format(time.RFC3339),
 				entry.Directory)

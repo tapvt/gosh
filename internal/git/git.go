@@ -14,6 +14,13 @@ import (
 	"gosh/internal/config"
 )
 
+const (
+	// MinStatusLineLength is the minimum length for a git status line
+	MinStatusLineLength = 2
+	// ExpectedRevListParts is the expected number of parts from git rev-list output
+	ExpectedRevListParts = 2
+)
+
 // Info represents git repository information
 type Info struct {
 	Branch         string
@@ -102,7 +109,7 @@ func (m *Manager) getStatus(info *Info) error {
 
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
-		if len(line) < 2 {
+		if len(line) < MinStatusLineLength {
 			continue
 		}
 
@@ -138,7 +145,7 @@ func (m *Manager) getAheadBehind(info *Info) error {
 	}
 
 	parts := strings.Fields(strings.TrimSpace(string(output)))
-	if len(parts) != 2 {
+	if len(parts) != ExpectedRevListParts {
 		return fmt.Errorf("unexpected git rev-list output: %s", output)
 	}
 
@@ -160,26 +167,7 @@ func (m *Manager) getAheadBehind(info *Info) error {
 
 // GetBranches returns a list of git branches for completion
 func (m *Manager) GetBranches() ([]string, error) {
-	if !m.isGitRepo() {
-		return nil, nil
-	}
-
-	cmd := exec.Command("git", "branch", "--format=%(refname:short)")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-
-	var branches []string
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		branch := strings.TrimSpace(scanner.Text())
-		if branch != "" {
-			branches = append(branches, branch)
-		}
-	}
-
-	return branches, scanner.Err()
+	return m.getGitCommandOutput("git", "branch", "--format=%(refname:short)")
 }
 
 // GetRemotes returns a list of git remotes for completion
@@ -208,26 +196,31 @@ func (m *Manager) GetRemotes() ([]string, error) {
 
 // GetModifiedFiles returns a list of modified files for completion
 func (m *Manager) GetModifiedFiles() ([]string, error) {
+	return m.getGitCommandOutput("git", "diff", "--name-only")
+}
+
+// getGitCommandOutput executes a git command and returns the output as a slice of strings
+func (m *Manager) getGitCommandOutput(name string, args ...string) ([]string, error) {
 	if !m.isGitRepo() {
 		return nil, nil
 	}
 
-	cmd := exec.Command("git", "diff", "--name-only")
+	cmd := exec.Command(name, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
 
-	var files []string
+	var results []string
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	for scanner.Scan() {
-		file := strings.TrimSpace(scanner.Text())
-		if file != "" {
-			files = append(files, file)
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			results = append(results, line)
 		}
 	}
 
-	return files, scanner.Err()
+	return results, scanner.Err()
 }
 
 // GetUntrackedFiles returns a list of untracked files for completion

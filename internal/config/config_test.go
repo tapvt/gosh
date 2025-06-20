@@ -215,7 +215,7 @@ func TestSetConfigValue(t *testing.T) {
 			key:     "UNKNOWN_KEY",
 			value:   "value",
 			wantErr: true,
-			check:   func(c *Config) bool { return true },
+			check:   func(_ *Config) bool { return true },
 		},
 	}
 

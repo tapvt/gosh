@@ -12,6 +12,11 @@ import (
 	"strings"
 )
 
+const (
+	// KeyValueParts is the expected number of parts when splitting key=value pairs
+	KeyValueParts = 2
+)
+
 // Config holds all configuration options for gosh
 type Config struct {
 	// Core settings
@@ -20,27 +25,27 @@ type Config struct {
 	ShowWelcome bool   `json:"show_welcome"`
 
 	// Prompt settings
-	PromptFormat    string `json:"prompt_format"`
-	ShowGitInfo     bool   `json:"show_git_info"`
-	ShowTimestamp   bool   `json:"show_timestamp"`
-	PromptColor     string `json:"prompt_color"`
+	PromptFormat  string `json:"prompt_format"`
+	ShowGitInfo   bool   `json:"show_git_info"`
+	ShowTimestamp bool   `json:"show_timestamp"`
+	PromptColor   string `json:"prompt_color"`
 
 	// History settings
-	HistorySize     int    `json:"history_size"`
-	HistoryFile     string `json:"history_file"`
-	SaveHistory     bool   `json:"save_history"`
-	HistoryDuplicates bool `json:"history_duplicates"`
+	HistorySize       int    `json:"history_size"`
+	HistoryFile       string `json:"history_file"`
+	SaveHistory       bool   `json:"save_history"`
+	HistoryDuplicates bool   `json:"history_duplicates"`
 
 	// Completion settings
-	CompletionEnabled   bool `json:"completion_enabled"`
+	CompletionEnabled         bool `json:"completion_enabled"`
 	CompletionCaseInsensitive bool `json:"completion_case_insensitive"`
-	CompletionShowHidden bool `json:"completion_show_hidden"`
+	CompletionShowHidden      bool `json:"completion_show_hidden"`
 
 	// Git integration settings
-	GitEnabled      bool `json:"git_enabled"`
-	GitShowStatus   bool `json:"git_show_status"`
-	GitShowBranch   bool `json:"git_show_branch"`
-	GitShowAhead    bool `json:"git_show_ahead"`
+	GitEnabled    bool `json:"git_enabled"`
+	GitShowStatus bool `json:"git_show_status"`
+	GitShowBranch bool `json:"git_show_branch"`
+	GitShowAhead  bool `json:"git_show_ahead"`
 
 	// Environment variables
 	Environment map[string]string `json:"environment"`
@@ -55,7 +60,7 @@ type Config struct {
 // Default returns a default configuration
 func Default() *Config {
 	homeDir, _ := os.UserHomeDir()
-	
+
 	return &Config{
 		// Core settings
 		ConfigDir:   filepath.Join(homeDir, ".config", "gosh"),
@@ -133,11 +138,21 @@ func Load(configDir string) (*Config, error) {
 
 // loadFromFile loads configuration from a specific file
 func (c *Config) loadFromFile(filename string) error {
-	file, err := os.Open(filename)
+	// Validate the file path to prevent directory traversal
+	cleanPath := filepath.Clean(filename)
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("invalid file path: %s", filename)
+	}
+
+	file, err := os.Open(cleanPath)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
@@ -186,8 +201,8 @@ func (c *Config) parseLine(line string) error {
 
 // parseExport parses export statements
 func (c *Config) parseExport(line string) error {
-	parts := strings.SplitN(line, "=", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(line, "=", KeyValueParts)
+	if len(parts) != KeyValueParts {
 		return fmt.Errorf("invalid export statement: %s", line)
 	}
 
@@ -200,8 +215,8 @@ func (c *Config) parseExport(line string) error {
 
 // parseAlias parses alias statements
 func (c *Config) parseAlias(line string) error {
-	parts := strings.SplitN(line, "=", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(line, "=", KeyValueParts)
+	if len(parts) != KeyValueParts {
 		return fmt.Errorf("invalid alias statement: %s", line)
 	}
 
@@ -214,8 +229,8 @@ func (c *Config) parseAlias(line string) error {
 
 // parseSet parses set statements for gosh-specific settings
 func (c *Config) parseSet(line string) error {
-	parts := strings.SplitN(line, "=", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(line, "=", KeyValueParts)
+	if len(parts) != KeyValueParts {
 		return fmt.Errorf("invalid set statement: %s", line)
 	}
 
@@ -227,8 +242,8 @@ func (c *Config) parseSet(line string) error {
 
 // parseAssignment parses direct variable assignments
 func (c *Config) parseAssignment(line string) error {
-	parts := strings.SplitN(line, "=", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(line, "=", KeyValueParts)
+	if len(parts) != KeyValueParts {
 		return fmt.Errorf("invalid assignment: %s", line)
 	}
 
@@ -247,47 +262,127 @@ func (c *Config) parseAssignment(line string) error {
 
 // setConfigValue sets a configuration value by key
 func (c *Config) setConfigValue(key, value string) error {
-	switch strings.ToUpper(key) {
+	upperKey := strings.ToUpper(key)
+
+	// Handle core settings
+	if err := c.setCoreSettings(upperKey, value); err == nil {
+		return nil
+	}
+
+	// Handle prompt settings
+	if err := c.setPromptSettings(upperKey, value); err == nil {
+		return nil
+	}
+
+	// Handle history settings
+	if err := c.setHistorySettings(upperKey, value); err == nil {
+		return nil
+	}
+
+	// Handle completion settings
+	if err := c.setCompletionSettings(upperKey, value); err == nil {
+		return nil
+	}
+
+	// Handle git settings
+	if err := c.setGitSettings(upperKey, value); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("unknown configuration key: %s", key)
+}
+
+// setCoreSettings handles core configuration settings
+func (c *Config) setCoreSettings(key, value string) error {
+	switch key {
 	case "DEBUG":
 		c.Debug = parseBool(value)
+		return nil
 	case "SHOW_WELCOME":
 		c.ShowWelcome = parseBool(value)
+		return nil
+	default:
+		return fmt.Errorf("not a core setting")
+	}
+}
+
+// setPromptSettings handles prompt configuration settings
+func (c *Config) setPromptSettings(key, value string) error {
+	switch key {
 	case "PROMPT_FORMAT":
 		c.PromptFormat = value
+		return nil
 	case "SHOW_GIT_INFO":
 		c.ShowGitInfo = parseBool(value)
+		return nil
 	case "SHOW_TIMESTAMP":
 		c.ShowTimestamp = parseBool(value)
+		return nil
 	case "PROMPT_COLOR":
 		c.PromptColor = value
+		return nil
+	default:
+		return fmt.Errorf("not a prompt setting")
+	}
+}
+
+// setHistorySettings handles history configuration settings
+func (c *Config) setHistorySettings(key, value string) error {
+	switch key {
 	case "HISTORY_SIZE":
 		if size, err := strconv.Atoi(value); err == nil {
 			c.HistorySize = size
 		}
+		return nil
 	case "HISTORY_FILE":
 		c.HistoryFile = value
+		return nil
 	case "SAVE_HISTORY":
 		c.SaveHistory = parseBool(value)
+		return nil
 	case "HISTORY_DUPLICATES":
 		c.HistoryDuplicates = parseBool(value)
+		return nil
+	default:
+		return fmt.Errorf("not a history setting")
+	}
+}
+
+// setCompletionSettings handles completion configuration settings
+func (c *Config) setCompletionSettings(key, value string) error {
+	switch key {
 	case "COMPLETION_ENABLED":
 		c.CompletionEnabled = parseBool(value)
+		return nil
 	case "COMPLETION_CASE_INSENSITIVE":
 		c.CompletionCaseInsensitive = parseBool(value)
+		return nil
 	case "COMPLETION_SHOW_HIDDEN":
 		c.CompletionShowHidden = parseBool(value)
+		return nil
+	default:
+		return fmt.Errorf("not a completion setting")
+	}
+}
+
+// setGitSettings handles git configuration settings
+func (c *Config) setGitSettings(key, value string) error {
+	switch key {
 	case "GIT_ENABLED":
 		c.GitEnabled = parseBool(value)
+		return nil
 	case "GIT_SHOW_STATUS":
 		c.GitShowStatus = parseBool(value)
+		return nil
 	case "GIT_SHOW_BRANCH":
 		c.GitShowBranch = parseBool(value)
+		return nil
 	case "GIT_SHOW_AHEAD":
 		c.GitShowAhead = parseBool(value)
+		return nil
 	default:
-		return fmt.Errorf("unknown configuration key: %s", key)
+		return fmt.Errorf("not a git setting")
 	}
-	return nil
 }
 
 // parseBool parses a boolean value from string
