@@ -166,7 +166,7 @@ jobs:
         COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
         BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
         LDFLAGS="-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}"
-        
+
         mkdir -p build
         if [ "${{ matrix.goos }}" = "windows" ]; then
           go build -trimpath -ldflags "${LDFLAGS}" -o build/gosh-${{ matrix.goos }}-${{ matrix.goarch }}.exe cmd/main.go
@@ -192,10 +192,23 @@ jobs:
       with:
         go-version: '1.23.3'
 
-    - name: Run Gosec Security Scanner
-      uses: securecodewarrior/github-action-gosec@master
+    - name: Cache Go modules
+      uses: actions/cache@v3
       with:
-        args: './...'
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run Gosec Security Scanner
+      run: |
+        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        gosec ./...
 
     - name: Run Nancy vulnerability scanner
       run: |
