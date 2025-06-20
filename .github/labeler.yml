@@ -1,0 +1,62 @@
+# Configuration for the labeler action
+# https://github.com/actions/labeler
+
+# Core functionality
+"core":
+  - "internal/shell/**/*"
+  - "internal/parser/**/*"
+  - "cmd/**/*"
+
+# Configuration related
+"config":
+  - "internal/config/**/*"
+  - "docs/sample.*"
+  - ".goshrc"
+  - ".gosh_profile"
+
+# Completion system
+"completion":
+  - "internal/completion/**/*"
+  - "*completion*"
+
+# Git integration
+"git":
+  - "internal/git/**/*"
+
+# History functionality
+"history":
+  - "internal/history/**/*"
+
+# Prompt system
+"prompt":
+  - "internal/prompt/**/*"
+
+# Documentation
+"documentation":
+  - "docs/**/*"
+  - "README.md"
+  - "*.md"
+
+# Tests
+"tests":
+  - "**/*_test.go"
+  - "integration_test.go"
+  - "test_*.sh"
+
+# Build and CI
+"build":
+  - "Makefile"
+  - "go.mod"
+  - "go.sum"
+  - ".github/**/*"
+  - "Dockerfile"
+
+# Scripts
+"scripts":
+  - "scripts/**/*"
+  - "*.sh"
+
+# Dependencies
+"dependencies":
+  - "go.mod"
+  - "go.sum"

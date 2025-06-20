@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.3'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        args: --timeout=5m
+
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.3'
+
+    - name: Check formatting
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          echo "The following files are not formatted:"
+          gofmt -s -l .
+          echo "Please run 'make fmt' to format your code."
+          exit 1
+        fi
+
+  vet:
+    name: Go Vet
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.3'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run go vet
+      run: go vet ./...
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22', '1.23.3']
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go ${{ matrix.go-version }}
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ matrix.go-version }}-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run unit tests
+      run: go test -v -race -coverprofile=coverage.out ./internal/...
+
+    - name: Run integration tests
+      run: go test -v -tags=integration ./...
+
+    - name: Upload coverage to Codecov
+      if: matrix.go-version == '1.23.3'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, format, vet, test]
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.3'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+        COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+        LDFLAGS="-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}"
+        
+        mkdir -p build
+        if [ "${{ matrix.goos }}" = "windows" ]; then
+          go build -trimpath -ldflags "${LDFLAGS}" -o build/gosh-${{ matrix.goos }}-${{ matrix.goarch }}.exe cmd/main.go
+        else
+          go build -trimpath -ldflags "${LDFLAGS}" -o build/gosh-${{ matrix.goos }}-${{ matrix.goarch }} cmd/main.go
+        fi
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: gosh-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: build/gosh-*
+        retention-days: 30
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.3'
+
+    - name: Run Gosec Security Scanner
+      uses: securecodewarrior/github-action-gosec@master
+      with:
+        args: './...'
+
+    - name: Run Nancy vulnerability scanner
+      run: |
+        go install github.com/sonatypecommunity/nancy@latest
+        go list -json -deps ./... | nancy sleuth
