@@ -21,6 +21,11 @@ import (
 	"github.com/chzyer/readline"
 )
 
+const (
+	// MinSimilarityLength is the minimum length for similarity checks
+	MinSimilarityLength = 2
+)
+
 // shellCompleter implements readline.AutoCompleter for tab completion
 type shellCompleter struct {
 	completion *completion.Manager
@@ -135,15 +140,17 @@ func New(cfg *config.Config) (*Shell, error) {
 // Run starts the main shell loop
 func (s *Shell) Run() error {
 	defer s.cancel()
-	defer s.readline.Close()
+	defer func() {
+		if err := s.readline.Close(); err != nil && s.config.Debug {
+			s.printDebugWarning(fmt.Sprintf("Warning: failed to close readline: %v", err))
+		}
+	}()
 
 	// Setup signal handling
 	s.setupSignalHandling()
 
 	// Load configuration files
-	if err := s.loadConfigFiles(); err != nil {
-		return fmt.Errorf("failed to load config files: %w", err)
-	}
+	s.loadConfigFiles()
 
 	// Print welcome message if configured
 	if s.config.ShowWelcome {
@@ -169,7 +176,7 @@ func (s *Shell) mainLoop() error {
 					continue
 				}
 				if err == io.EOF {
-					fmt.Fprintln(s.writer, "\nGoodbye!")
+					s.printWithDebugWarning("\nGoodbye!\n", "goodbye message")
 					return nil
 				}
 				return fmt.Errorf("failed to read input: %w", err)
@@ -232,12 +239,12 @@ func (s *Shell) setupSignalHandling() {
 				switch sig {
 				case syscall.SIGINT:
 					// Handle Ctrl+C gracefully
-					fmt.Fprintln(s.writer, "^C")
+					s.printWithDebugWarning("^C\n", "interrupt message")
 					// Don't exit, just interrupt current operation and continue
 					// The main loop will continue and show a new prompt
 				case syscall.SIGTERM:
 					// Handle termination
-					fmt.Fprintln(s.writer, "\nTerminating gosh...")
+					s.printWithDebugWarning("\nTerminating gosh...\n", "termination message")
 					s.cancel()
 					return
 				}
@@ -249,22 +256,28 @@ func (s *Shell) setupSignalHandling() {
 }
 
 // loadConfigFiles loads .goshrc and .gosh_profile files
-func (s *Shell) loadConfigFiles() error {
+func (s *Shell) loadConfigFiles() {
 	// Load .gosh_profile (login shell)
-	if err := s.loadConfigFile(".gosh_profile"); err != nil && s.config.Debug {
-		fmt.Fprintf(s.writer, "Warning: failed to load .gosh_profile: %v\n", err)
-	}
+	s.loadConfigFileWithWarning(".gosh_profile")
 
 	// Load .goshrc (interactive shell)
-	if err := s.loadConfigFile(".goshrc"); err != nil && s.config.Debug {
-		fmt.Fprintf(s.writer, "Warning: failed to load .goshrc: %v\n", err)
-	}
+	s.loadConfigFileWithWarning(".goshrc")
+}
 
-	return nil
+// loadConfigFileWithWarning loads a config file and prints warning on error if debug is enabled
+func (s *Shell) loadConfigFileWithWarning(filename string) {
+	if err := s.loadConfigFile(filename); err != nil && s.config.Debug {
+		s.printDebugWarning(fmt.Sprintf("Warning: failed to load %s: %v", filename, err))
+	}
+}
+
+// printDebugWarning prints a debug warning message, ignoring print errors
+func (s *Shell) printDebugWarning(message string) {
+	_, _ = fmt.Fprintf(s.writer, "%s\n", message)
 }
 
 // loadConfigFile loads a specific configuration file
-func (s *Shell) loadConfigFile(filename string) error {
+func (s *Shell) loadConfigFile(_ string) error {
 	// Implementation will be added when we implement the config system
 	// For now, just return nil
 	return nil
@@ -272,8 +285,23 @@ func (s *Shell) loadConfigFile(filename string) error {
 
 // printWelcome prints the welcome message
 func (s *Shell) printWelcome() {
-	fmt.Fprintf(s.writer, "Welcome to gosh - A modern shell written in Go\n")
-	fmt.Fprintf(s.writer, "Type 'help' for available commands.\n\n")
+	s.printWithDebugWarning("Welcome to gosh - A modern shell written in Go\n", "welcome message")
+	s.printWithDebugWarning("Type 'help' for available commands.\n\n", "help message")
+}
+
+// printWithDebugWarning prints a message and shows debug warning on error
+func (s *Shell) printWithDebugWarning(message, description string) {
+	if _, err := fmt.Fprint(s.writer, message); err != nil && s.config.Debug {
+		s.printDebugWarning(fmt.Sprintf("Warning: failed to print %s: %v", description, err))
+	}
+}
+
+// printErrorWithDebug prints an error message and optional debug info
+func (s *Shell) printErrorWithDebug(errorMsg, debugInfo string) {
+	s.printWithDebugWarning(fmt.Sprintf("gosh: %s\n", errorMsg), "error message")
+	if s.config.Debug && debugInfo != "" {
+		s.printWithDebugWarning(fmt.Sprintf("Debug: %s\n", debugInfo), "debug info")
+	}
 }
 
 // handleError provides enhanced error handling with context and recovery
@@ -283,36 +311,21 @@ func (s *Shell) handleError(err error, input string) {
 
 	switch {
 	case strings.Contains(errorMsg, "command not found"):
-		fmt.Fprintf(s.writer, "gosh: %s\n", errorMsg)
-		if s.config.Debug {
-			fmt.Fprintf(s.writer, "Debug: Input was '%s'\n", input)
-		}
+		s.printErrorWithDebug(errorMsg, fmt.Sprintf("Input was '%s'", input))
 		s.suggestSimilarCommands(input)
 
 	case strings.Contains(errorMsg, "no such file or directory"):
-		fmt.Fprintf(s.writer, "gosh: %s\n", errorMsg)
-		if s.config.Debug {
-			fmt.Fprintf(s.writer, "Debug: Check if the path exists and you have permission\n")
-		}
+		s.printErrorWithDebug(errorMsg, "Check if the path exists and you have permission")
 
 	case strings.Contains(errorMsg, "permission denied"):
-		fmt.Fprintf(s.writer, "gosh: %s\n", errorMsg)
-		if s.config.Debug {
-			fmt.Fprintf(s.writer, "Debug: Check file permissions or try with sudo\n")
-		}
+		s.printErrorWithDebug(errorMsg, "Check file permissions or try with sudo")
 
 	case strings.Contains(errorMsg, "parse error"):
-		fmt.Fprintf(s.writer, "gosh: syntax error: %s\n", errorMsg)
-		if s.config.Debug {
-			fmt.Fprintf(s.writer, "Debug: Check your command syntax\n")
-		}
+		s.printErrorWithDebug("syntax error: "+errorMsg, "Check your command syntax")
 
 	default:
 		// Generic error handling
-		fmt.Fprintf(s.writer, "gosh: %s\n", errorMsg)
-		if s.config.Debug {
-			fmt.Fprintf(s.writer, "Debug: Error type: %T\n", err)
-		}
+		s.printErrorWithDebug(errorMsg, fmt.Sprintf("Error type: %T", err))
 	}
 }
 
@@ -342,13 +355,13 @@ func (s *Shell) suggestSimilarCommands(input string) {
 	}
 
 	if len(suggestions) > 0 {
-		fmt.Fprintf(s.writer, "Did you mean: %s?\n", strings.Join(suggestions, ", "))
+		s.printWithDebugWarning(fmt.Sprintf("Did you mean: %s?\n", strings.Join(suggestions, ", ")), "suggestions")
 	}
 }
 
 // isSimilar checks if two strings are similar (simple Levenshtein-like check)
 func (s *Shell) isSimilar(a, b string) bool {
-	if len(a) == 0 || len(b) == 0 {
+	if a == "" || b == "" {
 		return false
 	}
 
@@ -363,8 +376,8 @@ func (s *Shell) isSimilar(a, b string) bool {
 		minLen = len(b)
 	}
 
-	if minLen >= 2 {
-		return a[:2] == b[:2]
+	if minLen >= MinSimilarityLength {
+		return a[:MinSimilarityLength] == b[:MinSimilarityLength]
 	}
 
 	return false

@@ -295,9 +295,12 @@ func TestCompleteGitSubcommands(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "empty prefix",
-			prefix:   "",
-			expected: []string{"add", "branch", "checkout", "clone", "commit", "diff", "fetch", "init", "log", "merge", "pull", "push", "rebase", "remote", "reset", "show", "status", "switch", "tag"},
+			name:   "empty prefix",
+			prefix: "",
+			expected: []string{
+				"add", "branch", "checkout", "clone", "commit", "diff", "fetch", "init", "log",
+				"merge", "pull", "push", "rebase", "remote", "reset", "show", "status", "switch", "tag",
+			},
 		},
 		{
 			name:     "prefix 'st'",

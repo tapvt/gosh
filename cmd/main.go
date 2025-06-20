@@ -17,9 +17,12 @@ import (
 const (
 	// Version represents the current version of gosh
 	Version = "1.0.0"
-	
+
 	// DefaultConfigDir is the default directory for gosh configuration files
 	DefaultConfigDir = ".config/gosh"
+
+	// DefaultDirPermissions is the default permission for created directories
+	DefaultDirPermissions = 0750
 )
 
 var (
@@ -91,10 +94,10 @@ func initializeConfig() (*config.Config, error) {
 		if os.IsNotExist(err) {
 			cfg = config.Default()
 			cfg.ConfigDir = configPath
-			
+
 			// Create config directory if it doesn't exist
-			if err := os.MkdirAll(configPath, 0755); err != nil {
-				return nil, fmt.Errorf("failed to create config directory: %w", err)
+			if mkdirErr := os.MkdirAll(configPath, DefaultDirPermissions); mkdirErr != nil {
+				return nil, fmt.Errorf("failed to create config directory: %w", mkdirErr)
 			}
 		} else {
 			return nil, fmt.Errorf("failed to load configuration: %w", err)
