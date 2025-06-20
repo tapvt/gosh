@@ -1,0 +1,33 @@
+#!/bin/bash
+
+echo "Testing gosh tab completion fix..."
+echo "=================================="
+echo ""
+echo "This script will test the tab completion fix for the issues:"
+echo "1. 'git st<TAB>' becoming 'git ststatus' instead of 'git status'"
+echo "2. 'cd /h<TAB>' becoming 'cd /h/home' instead of 'cd /home'"
+echo ""
+echo "The fix should make completions work correctly by only adding the suffix."
+echo ""
+echo "Manual test instructions:"
+echo "1. Run: gosh"
+echo "2. Type: git st"
+echo "3. Press Tab - should complete to: git status"
+echo "4. Type: git sta"
+echo "5. Press Tab - should complete to: git status"
+echo "6. Type: cd /h"
+echo "7. Press Tab - should complete to: cd /home (if /home exists)"
+echo ""
+echo "If you see duplicated text like 'git ststatus' or 'cd /h/home', the fix didn't work."
+echo "If you see proper completions like 'git status' and 'cd /home', the fix worked!"
+echo ""
+echo "Press Enter to start gosh for manual testing, or Ctrl+C to exit..."
+read
+
+echo "Starting gosh..."
+echo "Test these scenarios:"
+echo "1. Type 'git st' and press Tab -> should become 'git status'"
+echo "2. Type 'git sta' and press Tab -> should become 'git status'"
+echo "3. Type 'cd /tmp/test_completion/h' and press Tab -> should complete to hello_world.txt"
+echo ""
+exec ./build/gosh

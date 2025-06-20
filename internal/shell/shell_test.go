@@ -103,16 +103,16 @@ func TestShellCompleter_GitStCompletion(t *testing.T) {
 		t.Errorf("This would cause 'git st' + 'status' to become 'git ststatus' instead of 'git status'")
 	}
 
-	// Verify we got "status" as one of the completions
+	// Verify we got "atus" (the suffix to complete "st" -> "status") as one of the completions
 	found := false
 	for _, completion := range completions {
-		if string(completion) == "status" {
+		if string(completion) == "atus" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("Expected 'status' in completions, got: %v", completionsToStrings(completions))
+		t.Errorf("Expected 'atus' (suffix for 'st' -> 'status') in completions, got: %v", completionsToStrings(completions))
 	}
 }
 

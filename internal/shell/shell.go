@@ -34,30 +34,31 @@ func (c *shellCompleter) Do(line []rune, pos int) (newLine [][]rune, length int)
 		return nil, 0
 	}
 
-	// Convert completions to [][]rune
+	// Find the start of the current word being completed
+	wordStart := pos
+	for wordStart > 0 && lineStr[wordStart-1] != ' ' && lineStr[wordStart-1] != '\t' {
+		wordStart--
+	}
+
+	// Get the current partial word
+	currentWord := lineStr[wordStart:pos]
+
+	// Convert completions to suffixes that should be added
 	var result [][]rune
 	for _, completion := range completions {
-		result = append(result, []rune(completion))
-	}
-
-	// Find common prefix length
-	if len(completions) > 0 {
-		commonPrefix := c.completion.GetCommonPrefix(completions)
-		// Calculate how much of the current word to replace
-		// Find the start of the current word being completed
-		wordStart := pos
-		for wordStart > 0 && lineStr[wordStart-1] != ' ' && lineStr[wordStart-1] != '\t' {
-			wordStart--
-		}
-
-		// Get the current partial word
-		currentWord := lineStr[wordStart:pos]
-
-		// Only set length if the common prefix actually starts with the current word
-		if strings.HasPrefix(commonPrefix, currentWord) {
-			length = len(currentWord)
+		if strings.HasPrefix(completion, currentWord) {
+			// Only add the suffix that's not already typed
+			suffix := completion[len(currentWord):]
+			result = append(result, []rune(suffix))
+		} else {
+			// If completion doesn't start with current word, use full completion
+			// This handles cases where the completion logic returns different matches
+			result = append(result, []rune(completion))
 		}
 	}
+
+	// Set length to the length of the current word to replace
+	length = len(currentWord)
 
 	return result, length
 }
